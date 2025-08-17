@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tic Tac Toe</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f7f7f7;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, 100px);
+      grid-gap: 5px;
+      justify-content: center;
+      margin: 20px auto;
+    }
+
+    .cell {
+      width: 100px;
+      height: 100px;
+      background: white;
+      border: 2px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2em;
+      cursor: pointer;
+    }
+
+    #status {
+      font-size: 1.2em;
+      margin: 10px 0;
+    }
+
+    #resetBtn {
+      padding: 10px 15px;
+      font-size: 1em;
+      cursor: pointer;
+    }
+
+    #scoreboard {
+      margin-top: 20px;
+    }
+
+    #history {
+      margin-top: 20px;
+      text-align: left;
+      max-width: 400px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    #history ul {
+      list-style-type: none;
+      padding: 0;
+    }
+
+    #history li {
+      background: #fff;
+      margin: 5px 0;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Tic Tac Toe</h1>
+
+  <div id="authSection">
+    <button id="loginBtn">Login with Google</button>
+    <button id="logoutBtn" style="display:none;">Logout</button>
+    <p id="userInfo"></p>
+  </div>
+
+  <div id="game">
+    <div class="board">
+      <div class="cell" data-index="0"></div>
+      <div class="cell" data-index="1"></div>
+      <div class="cell" data-index="2"></div>
+      <div class="cell" data-index="3"></div>
+      <div class="cell" data-index="4"></div>
+      <div class="cell" data-index="5"></div>
+      <div class="cell" data-index="6"></div>
+      <div class="cell" data-index="7"></div>
+      <div class="cell" data-index="8"></div>
+    </div>
+
+    <p id="status">Player X's turn</p>
+    <button id="resetBtn">Reset Game</button>
+  </div>
+
+  <div id="scoreboard">
+    <h2>Scoreboard</h2>
+    <p>Player X: <span id="scoreX">0</span></p>
+    <p>Player O: <span id="scoreO">0</span></p>
+    <p>Draws: <span id="scoreDraw">0</span></p>
+  </div>
+
+  <div id="history">
+    <h2>Game History</h2>
+    <ul id="historyList"></ul>
+  </div>
+
+  <script type="module">
+    // Firebase imports
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+    import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+
+    // Firebase Config
+    const firebaseConfig = {
+      apiKey: "AIzaSyC2gTyVUGQhhGE8c3duZHckFusMHbJU7co",
+      authDomain: "test-fd070.firebaseapp.com",
+      databaseURL: "https://test-fd070-default-rtdb.firebaseio.com",
+      projectId: "test-fd070",
+      storageBucket: "test-fd070.firebasestorage.app",
+      messagingSenderId: "837944181969",
+      appId: "1:837944181969:web:137dd61f4c901a3c40b1f0"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // DOM elements
+    const cells = document.querySelectorAll(".cell");
+    const statusText = document.getElementById("status");
+    const resetBtn = document.getElementById("resetBtn");
+    const scoreX = document.getElementById("scoreX");
+    const scoreO = document.getElementById("scoreO");
+    const scoreDraw = document.getElementById("scoreDraw");
+
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const userInfo = document.getElementById("userInfo");
+
+    // Game state
+    let board = ["", "", "", "", "", "", "", "", ""];
+    let currentPlayer = "X";
+    let running = true;
+    let scores = { X: 0, O: 0, draw: 0 };
+
+    const winPatterns = [
+      [0, 1, 2], [3, 4, 5], [6, 7, 8],
+      [0, 3, 6], [1, 4, 7], [2, 5, 8],
+      [0, 4, 8], [2, 4, 6],
+    ];
+
+    // Initialize game
+    function initializeGame() {
+      cells.forEach((cell) => cell.addEventListener("click", cellClicked));
+      resetBtn.addEventListener("click", resetGame);
+      statusText.textContent = `Player ${currentPlayer}'s turn`;
+    }
+    initializeGame();
+
+    // Game logic
+    function cellClicked() {
+      const index = this.getAttribute("data-index");
+      if (board[index] !== "" || !running) return;
+
+      board[index] = currentPlayer;
+      this.textContent = currentPlayer;
+
+      checkWinner();
+    }
+
+    function checkWinner() {
+      let winner = null;
+
+      for (let pattern of winPatterns) {
+        const [a, b, c] = pattern;
+        if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+          winner = board[a];
+          break;
+        }
+      }
+
+      if (winner) {
+        statusText.textContent = `Player ${winner} wins! 🎉`;
+        scores[winner]++;
+        updateScoreboard();
+        running = false;
+        saveGameResult(winner);
+      } else if (!board.includes("")) {
+        statusText.textContent = "It's a draw! 🤝";
+        scores.draw++;
+        updateScoreboard();
+        running = false;
+        saveGameResult("Draw");
+      } else {
+        currentPlayer = currentPlayer === "X" ? "O" : "X";
+        statusText.textContent = `Player ${currentPlayer}'s turn`;
+      }
+    }
+
+    function updateScoreboard() {
+      scoreX.textContent = scores.X;
+      scoreO.textContent = scores.O;
+      scoreDraw.textContent = scores.draw;
+    }
+
+    function resetGame() {
+      board = ["", "", "", "", "", "", "", "", ""];
+      currentPlayer = "X";
+      running = true;
+      statusText.textContent = `Player ${currentPlayer}'s turn`;
+      cells.forEach((cell) => (cell.textContent = ""));
+    }
+
+    // Firestore save
+    async function saveGameResult(result) {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      try {
+        await addDoc(collection(db, "games"), {
+          userId: user.uid,
+          userName: user.displayName || "Anonymous",
+          result: result,
+          scores: { ...scores },
+          timestamp: new Date()
+        });
+        console.log("Game saved!");
+      } catch (error) {
+        console.error("Error saving game:", error);
+      }
+    }
+
+    // Load history
+    function loadHistory(userId) {
+      const q = query(
+        collection(db, "games"),
+        orderBy("timestamp", "desc"),
+        limit(10)
+      );
+
+      onSnapshot(q, (snapshot) => {
+        const list = document.getElementById("historyList");
+        list.innerHTML = "";
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.userId === userId) {
+            const li = document.createElement("li");
+            li.textContent = `${data.userName} - ${data.result} (${data.timestamp.toDate().toLocaleString()})`;
+            list.appendChild(li);
+          }
+        });
+      });
+    }
+
+    // Auth
+    const provider = new GoogleAuthProvider();
+
+    loginBtn.addEventListener("click", () => {
+      signInWithPopup(auth, provider)
+        .then((result) => {
+          const user = result.user;
+          userInfo.textContent = `Welcome, ${user.displayName}`;
+          loginBtn.style.display = "none";
+          logoutBtn.style.display = "block";
+          loadHistory(user.uid);
+        })
+        .catch((error) => {
+          console.error("Login Error:", error);
+        });
+    });
+
+    logoutBtn.addEventListener("click", () => {
+      signOut(auth).then(() => {
+        userInfo.textContent = "";
+        loginBtn.style.display = "block";
+        logoutBtn.style.display = "none";
+        document.getElementById("historyList").innerHTML = "";
+      });
+    });
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        userInfo.textContent = `Welcome, ${user.displayName}`;
+        loginBtn.style.display = "none";
+        logoutBtn.style.display = "block";
+        loadHistory(user.uid);
+      } else {
+        userInfo.textContent = "";
+        loginBtn.style.display = "block";
+        logoutBtn.style.display = "none";
+        document.getElementById("historyList").innerHTML = "";
+      }
+    });
+  </script>
+</body>
+</html>
